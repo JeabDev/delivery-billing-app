@@ -217,9 +217,6 @@
             <v-card class="rounded-xl pa-4">
               <v-card-title class="headline">เลือกวิธีการ</v-card-title>
               <v-card-actions class="d-flex justify-center flex-column">
-                <!-- `capture="environment"` will open the back camera directly. -->
-                <input type="file" ref="cameraInput" accept="image/*" capture="environment" @change="handleFileCapture" style="display: none;">
-                <!-- Multiple file selection with `multiple`. -->
                 <input type="file" ref="galleryInput" accept="image/*" multiple @change="handleFileCapture" style="display: none;">
                 <v-btn color="blue lighten-1" class="white--text ma-2 rounded-xl" block large @click="triggerFileCapture('camera')">
                   <v-icon left>mdi-camera</v-icon>

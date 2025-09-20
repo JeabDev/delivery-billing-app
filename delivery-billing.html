@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui" />
+  <title>ระบบปิดบิลขนส่ง</title>
+  <!-- Vuetify CSS: Version 2.6.14 -->
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@2.6.14/dist/vuetify.min.css" rel="stylesheet" />
+  <!-- Material Design Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@5.x/css/materialdesignicons.min.css" rel="stylesheet" />
+  <style>
+    #app {
+      background-color: #f5f5f5;
+    }
+    .v-card {
+      border-radius: 12px !important;
+    }
+    .v-application .v-card.rounded-xl {
+      border-radius: 20px !important;
+    }
+    #interactive.viewport {
+      position: relative;
+      width: 100%;
+      height: 300px;
+    }
+    #interactive.viewport video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 12px;
+    }
+    .signature-pad {
+      border: 1px dashed #ccc;
+      border-radius: 12px;
+      cursor: crosshair;
+      background-color: #fff;
+      touch-action: none;
+    }
+    .signature-container {
+      position: relative;
+    }
+    .uploaded-image-preview {
+      position: relative;
+      width: 100px;
+      height: 100px;
+      object-fit: cover;
+      border-radius: 8px;
+      margin: 8px;
+    }
+    .image-preview-container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      align-items: center;
+    }
+    .image-remove-btn {
+      position: absolute;
+      top: 0;
+      right: 0;
+      min-width: unset !important;
+      width: 24px !important;
+      height: 24px !important;
+      padding: 0 !important;
+      border-radius: 50%;
+      background-color: rgba(255, 255, 255, 0.7);
+    }
+    .full-screen-dialog {
+      z-index: 9999;
+    }
+    .full-screen-content {
+      background-color: #f5f5f5;
+      padding: 16px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .signature-canvas {
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      border: 1px solid #ccc;
+      background-color: #fff;
+    }
+    .camera-preview-video {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <v-app>
+      <v-main>
+        <v-app-bar app color="#2196F3" dark>
+          <v-toolbar-title>
+            <v-icon left>mdi-truck-fast</v-icon>
+            ระบบปิดบิลขนส่ง
+          </v-toolbar-title>
+        </v-app-bar>
+
+        <v-container fluid class="pa-4">
+          <v-card class="rounded-xl pa-4 mb-4">
+            <v-text-field v-model="billNumber"
+                          label="เลขที่บิล"
+                          outlined
+                          rounded
+                          clearable
+                          prepend-inner-icon="mdi-text-box"
+                          @input="cleanBillNumber"
+                          ref="billNumberInput">
+              <template v-slot:append>
+                <v-btn icon @click="startBarcodeScanner">
+                  <v-icon>mdi-qrcode-scan</v-icon>
+                </v-btn>
+              </template>
+            </v-text-field>
+          </v-card>
+
+          <!-- Barcode Scanner Modal -->
+          <v-dialog v-model="scannerDialog" max-width="500px">
+            <v-card class="rounded-xl pa-4">
+              <v-card-title class="headline">สแกน QR Code/Barcode</v-card-title>
+              <!-- Container for the HTML5-QR-Code scanner -->
+              <div id="reader" style="width:100%; height:300px;"></div>
+              <v-card-actions>
+                <v-spacer></v-spacer>
+                <v-btn color="blue darken-1" text @click="stopBarcodeScanner">ยกเลิก</v-btn>
+              </v-card-actions>
+            </v-card>
+          </v-dialog>
+
+          <v-card v-if="billDetails.billNumber" class="rounded-xl pa-4 mb-4">
+            <v-card-title class="headline blue--text text--lighten-1 d-flex align-center pa-2">
+              <v-icon left>mdi-file-document-outline</v-icon>
+              รายละเอียดบิล
+            </v-card-title>
+            <v-divider class="my-2"></v-divider>
+            <v-row no-gutters class="mt-2">
+              <v-col cols="12" sm="6" class="pa-2">
+                <strong>เลขที่บิล:</strong> {{ billDetails.billNumber }}
+              </v-col>
+              <v-col cols="12" sm="6" class="pa-2">
+                <strong>ผู้ส่ง:</strong> {{ billDetails.sender }}
+              </v-col>
+              <v-col cols="12" sm="6" class="pa-2">
+                <strong>ผู้รับ:</strong> {{ billDetails.receiver }}
+              </v-col>
+              <v-col cols="12" sm="6" class="pa-2">
+                <strong>วันที่:</strong> {{ billDetails.date }}
+              </v-col>
+              <v-col cols="12" sm="6" class="pa-2">
+                <strong>สถานะ:</strong>
+                <v-chip color="green" dark small>{{ billDetails.status }}</v-chip>
+              </v-col>
+            </v-row>
+          </v-card>
+
+          <v-card class="rounded-xl pa-4 mb-4">
+            <v-card-title class="headline blue--text text--lighten-1 d-flex align-center pa-2">
+              <v-icon left>mdi-camera</v-icon>
+              รูปขนส่งสินค้า
+            </v-card-title>
+            <v-btn block color="blue lighten-5" class="rounded-xl py-6" @click="showImageSourceDialog('delivery')">
+              <v-icon left>mdi-camera-plus</v-icon>
+              <div class="d-flex flex-column align-center">
+                <span class="font-weight-medium">ถ่ายรูป หรือเลือกจากแกลเลอรี่</span>
+                <span class="caption">หลายรูปได้</span>
+              </div>
+            </v-btn>
+            <div class="image-preview-container">
+              <div v-for="(photo, index) in deliveryPhotoPreviews" :key="index" class="uploaded-image-preview">
+                <img :src="photo.src" class="uploaded-image-preview">
+                <v-btn class="image-remove-btn" icon small @click="removeImage('delivery', index)">
+                  <v-icon>mdi-close-circle</v-icon>
+                </v-btn>
+              </div>
+            </div>
+          </v-card>
+          
+          <v-card class="rounded-xl pa-4 mb-4">
+            <v-card-title class="headline blue--text text--lighten-1 d-flex align-center pa-2">
+              <v-icon left>mdi-draw</v-icon>
+              ลายเซ็นต์
+            </v-card-title>
+            
+            <div v-if="!signatureDataUrl">
+              <v-btn block color="blue lighten-5" class="rounded-xl py-6 mb-2" @click="showSignaturePadDialog">
+                <v-icon left>mdi-pencil</v-icon>
+                <div class="d-flex flex-column align-center">
+                  <span class="font-weight-medium">เซ็นชื่อของคุณที่นี่</span>
+                  <span class="caption">เซ็นสด</span>
+                </div>
+              </v-btn>
+              <v-btn block color="blue lighten-5" class="rounded-xl py-6" @click="showImageSourceDialog('signature')">
+                <v-icon left>mdi-image-multiple</v-icon>
+                <div class="d-flex flex-column align-center">
+                  <span class="font-weight-medium">เลือกรูปลายเซ็นต์</span>
+                  <span class="caption">จากแกลเลอรี่</span>
+                </div>
+              </v-btn>
+            </div>
+            <div class="signature-container" v-else>
+              <img :src="signatureDataUrl" class="signature-pad" style="width: 100%; height: 200px; object-fit: contain;">
+              <v-btn color="red" text @click="clearSignature">
+                <v-icon left>mdi-eraser</v-icon>
+                ลบ
+              </v-btn>
+            </div>
+            
+          </v-card>
+          
+          <!-- Image Source Modal (Camera or Gallery) -->
+          <v-dialog v-model="imageSourceDialog" max-width="500px">
+            <v-card class="rounded-xl pa-4">
+              <v-card-title class="headline">เลือกวิธีการ</v-card-title>
+              <v-card-actions class="d-flex justify-center flex-column">
+                <!-- `capture="environment"` will open the back camera directly. -->
+                <input type="file" ref="cameraInput" accept="image/*" capture="environment" @change="handleFileCapture" style="display: none;">
+                <!-- Multiple file selection with `multiple`. -->
+                <input type="file" ref="galleryInput" accept="image/*" multiple @change="handleFileCapture" style="display: none;">
+                <v-btn color="blue lighten-1" class="white--text ma-2 rounded-xl" block large @click="triggerFileCapture('camera')">
+                  <v-icon left>mdi-camera</v-icon>
+                  ถ่ายรูป
+                </v-btn>
+                <v-btn color="blue lighten-1" class="white--text ma-2 rounded-xl" block large @click="triggerFileCapture('gallery')">
+                  <v-icon left>mdi-image-multiple</v-icon>
+                  แกลเลอรี่
+                </v-btn>
+                <v-btn color="grey" text @click="imageSourceDialog = false">ยกเลิก</v-btn>
+              </v-card-actions>
+            </v-card>
+          </v-dialog>
+
+          <!-- New Camera Dialog -->
+          <v-dialog v-model="cameraDialog" fullscreen transition="dialog-bottom-transition" class="full-screen-dialog">
+              <v-card class="full-screen-content">
+                  <v-toolbar flat color="transparent" dense>
+                      <v-spacer></v-spacer>
+                      <v-btn icon @click="stopCamera">
+                          <v-icon>mdi-close</v-icon>
+                      </v-btn>
+                  </v-toolbar>
+                  <div style="flex-grow: 1; display: flex; align-items: center; justify-content: center; position: relative;">
+                      <video ref="cameraVideo" autoplay playsinline class="camera-preview-video"></video>
+                      <canvas ref="cameraCanvas" style="display:none;"></canvas>
+                  </div>
+                  <v-card-actions class="d-flex justify-center">
+                      <v-btn color="primary" class="white--text rounded-xl" @click="capturePhoto">
+                          <v-icon left>mdi-camera</v-icon>
+                          ถ่ายรูป
+                      </v-btn>
+                  </v-card-actions>
+              </v-card>
+          </v-dialog>
+
+          <!-- Signature Pad Dialog -->
+          <v-dialog v-model="signatureDialog" fullscreen transition="dialog-bottom-transition" class="full-screen-dialog">
+            <v-card class="full-screen-content">
+              <v-toolbar flat color="transparent" dense>
+                <v-spacer></v-spacer>
+                <v-btn icon @click="signatureDialog = false">
+                  <v-icon>mdi-close</v-icon>
+                </v-btn>
+              </v-toolbar>
+              <div style="flex-grow: 1; display: flex; align-items: center; justify-content: center;">
+                <canvas id="fullscreenSignatureCanvas" class="signature-canvas"></canvas>
+              </div>
+              <v-card-actions class="d-flex justify-center">
+                <v-btn color="red" class="white--text rounded-xl" @click="clearSignaturePad">
+                  <v-icon left>mdi-eraser</v-icon>
+                  ลบ
+                </v-btn>
+                <v-btn color="primary" class="white--text rounded-xl" @click="saveFullscreenSignature">
+                  <v-icon left>mdi-check</v-icon>
+                  บันทึก
+                </v-btn>
+              </v-card-actions>
+            </v-card>
+          </v-dialog>
+
+          <!-- Save Success Modal -->
+          <v-dialog v-model="successDialog" max-width="400px" persistent>
+            <v-card class="rounded-xl pa-4 text-center">
+              <v-card-title class="d-flex justify-center">
+                <v-icon color="green" size="48">mdi-check-circle</v-icon>
+              </v-card-title>
+              <v-card-title class="headline justify-center mb-2">สำเร็จ!</v-card-title>
+              <v-card-text>
+                <p class="text-h6">เลขที่บิล: {{ billNumber }}</p>
+                <p class="text-subtitle-1">สถานะ: {{ billDetails.status }}</p>
+                <p class="text-subtitle-1">จำนวนรูป: {{ deliveryPhotos.length }} รูป</p>
+                <p class="text-subtitle-1">ลายเซ็นต์: {{ signatureDataUrl ? '✅' : '❌' }}</p>
+              </v-card-text>
+              <v-card-actions class="d-flex justify-center">
+                <v-btn color="primary" class="rounded-xl" @click="handleSuccess">ตกลง</v-btn>
+              </v-card-actions>
+            </v-card>
+          </v-dialog>
+
+          <!-- Custom Message Box -->
+          <v-dialog v-model="messageBox.show" max-width="400px">
+              <v-card class="rounded-xl pa-4">
+                  <v-card-title class="headline">{{ messageBox.title }}</v-card-title>
+                  <v-card-text>{{ messageBox.message }}</v-card-text>
+                  <v-card-actions class="d-flex justify-center">
+                      <v-btn color="primary" class="rounded-xl" @click="messageBox.show = false">ตกลง</v-btn>
+                  </v-card-actions>
+              </v-card>
+          </v-dialog>
+
+          <v-btn color="primary" class="white--text ma-2 rounded-xl" block large @click="save">
+            <v-icon left>mdi-content-save</v-icon>
+            บันทึก
+          </v-btn>
+
+          <v-btn color="grey lighten-2" class="ma-2 rounded-xl" block large @click="cancel">
+            <v-icon left>mdi-close</v-icon>
+            ยกเลิก
+          </v-btn>
+
+        </v-container>
+      </v-main>
+    </v-app>
+  </div>
+  
+  <!-- Vue.js CDN: Version 2.6.14 -->
+  <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+  <!-- Vuetify.js CDN: Version 2.6.14 -->
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@2.6.14/dist/vuetify.js"></script>
+  <!-- html5-qrcode.js for barcode/QR code scanning -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  
+  <script>
+    new Vue({
+      el: '#app',
+      vuetify: new Vuetify(),
+      data: () => ({
+        billNumber: '',
+        billDetails: {},
+        deliveryPhotos: [],
+        deliveryPhotoPreviews: [],
+        signatureDataUrl: null,
+        scannerDialog: false,
+        imageSourceDialog: false,
+        signatureDialog: false,
+        successDialog: false,
+        signatureDrawn: false,
+        currentFileType: '',
+        messageBox: {
+            show: false,
+            title: 'แจ้งเตือน',
+            message: '',
+        },
+        html5QrcodeScanner: null,
+        cameraDialog: false,
+        stream: null,
+      }),
+      mounted() {
+        console.log('Vue app mounted successfully.');
+      },
+      methods: {
+        cleanBillNumber() {
+          if (!this.billNumber) {
+            this.billDetails = {};
+            return;
+          }
+          this.billNumber = this.billNumber.toUpperCase().replace(/-/g, '');
+          if (this.billNumber === 'DO0011025456') {
+            this.billDetails = {
+              billNumber: 'DO0011025456',
+              sender: 'บริษัท ABC จำกัด',
+              receiver: 'บริษัท XYZ จำกัด',
+              date: '20/9/2568',
+              status: '10 - สร้างบิล'
+            };
+          } else {
+            this.billDetails = {};
+          }
+        },
+        // Start the barcode scanner.
+        async startBarcodeScanner() {
+            this.scannerDialog = true;
+            await this.$nextTick();
+            
+            // Add a small delay to ensure any previous camera access is fully released by the system.
+            setTimeout(async () => {
+                if (this.html5QrcodeScanner) {
+                    try {
+                        await this.html5QrcodeScanner.clear();
+                        console.log("Previous scanner instance cleared.");
+                    } catch (err) {
+                        console.error("Failed to clear previous scanner instance:", err);
+                    } finally {
+                        this.html5QrcodeScanner = null;
+                    }
+                }
+                
+                this.html5QrcodeScanner = new Html5QrcodeScanner(
+                    "reader", {
+                        fps: 10,
+                        qrbox: {
+                            width: 250,
+                            height: 250
+                        },
+                        facingMode: "environment"
+                    },
+                    false
+                );
+
+                this.html5QrcodeScanner.render(
+                    this.onScanSuccess,
+                    this.onScanFailure
+                );
+            }, 300);
+        },
+        // Function when scan is successful.
+        onScanSuccess(decodedText) {
+          console.log(`Scan successful: ${decodedText}`);
+          this.billNumber = decodedText;
+          this.stopBarcodeScanner();
+        },
+        // Function when scan fails.
+        onScanFailure(error) {
+            // This function is often called continuously, so we log it but don't show a pop-up.
+            console.warn(`Scan failure: ${error}`);
+        },
+        // Stop the barcode scanner.
+        async stopBarcodeScanner() {
+          if (this.html5QrcodeScanner) {
+            try {
+                await this.html5QrcodeScanner.clear();
+                console.log("Scanner stopped successfully.");
+            } catch (err) {
+                console.error("Failed to stop scanner: ", err);
+            } finally {
+                this.html5QrcodeScanner = null;
+            }
+          }
+          this.scannerDialog = false;
+        },
+        showImageSourceDialog(fileType) {
+          this.currentFileType = fileType;
+          this.imageSourceDialog = true;
+        },
+        // Refined function to trigger file capture
+        triggerFileCapture(source) {
+            this.imageSourceDialog = false;
+            if (source === 'camera') {
+                this.openCamera();
+            } else {
+                this.$refs.galleryInput.click();
+            }
+        },
+        async openCamera() {
+            this.cameraDialog = true;
+            await this.$nextTick();
+            const video = this.$refs.cameraVideo;
+            
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: 'environment' // Use back camera
+                        }
+                    });
+                    this.stream = stream;
+                    video.srcObject = stream;
+                    video.play();
+                } catch (err) {
+                    console.error("Camera access denied or not available:", err);
+                    this.showMessageBox('ไม่สามารถเข้าถึงกล้องได้ กรุณาตรวจสอบสิทธิ์การใช้งานของเบราว์เซอร์');
+                    this.cameraDialog = false;
+                }
+            } else {
+                this.showMessageBox('เบราว์เซอร์ไม่รองรับการเข้าถึงกล้อง');
+                this.cameraDialog = false;
+            }
+        },
+        stopCamera() {
+            if (this.stream) {
+                this.stream.getTracks().forEach(track => track.stop());
+                this.stream = null;
+            }
+            this.cameraDialog = false;
+        },
+        capturePhoto() {
+            const video = this.$refs.cameraVideo;
+            const canvas = this.$refs.cameraCanvas;
+            const context = canvas.getContext('2d');
+            
+            // Set canvas dimensions to video dimensions
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Draw the video frame on the canvas
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Get data URL from the canvas
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // Stop the camera stream
+            this.stopCamera();
+            
+            // Process the captured photo
+            this.handleCapturedImage(dataUrl);
+        },
+        handleCapturedImage(dataUrl) {
+            if (this.currentFileType === 'delivery') {
+                this.deliveryPhotoPreviews.push({ src: dataUrl });
+                // We don't have the original file object, but we have the data URL.
+                // You can convert data URL to a blob if you need the file object for an API call.
+                this.deliveryPhotos.push({ dataUrl }); // Store dataUrl for later
+            } else if (this.currentFileType === 'signature') {
+                this.signatureDataUrl = dataUrl;
+                this.signatureDrawn = true;
+            }
+        },
+        async handleFileCapture(event) {
+          const files = event.target.files;
+          if (!files.length) return;
+          
+          if (this.currentFileType === 'delivery') {
+            for (let i = 0; i < files.length; i++) {
+              const file = files[i];
+              this.deliveryPhotos.push(file);
+              try {
+                  const resizedDataUrl = await this.resizeImage(file, 800, 800);
+                  this.deliveryPhotoPreviews.push({ name: file.name, src: resizedDataUrl });
+              } catch (err) {
+                  console.error('Resize image error:', err);
+                  this.showMessageBox('ไม่สามารถแสดงตัวอย่างรูปภาพได้: ' + err.message);
+              }
+            }
+          } else if (this.currentFileType === 'signature') {
+            const file = files[0];
+            this.signatureDataUrl = null;
+            this.signatureDrawn = true;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              this.signatureDataUrl = e.target.result;
+            };
+            reader.onerror = (e) => {
+                console.error("File reader error:", e);
+                this.showMessageBox('ไม่สามารถอ่านไฟล์ได้');
+            };
+            reader.readAsDataURL(file);
+          }
+        },
+        resizeImage(file, maxWidth, maxHeight) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const reader = new FileReader();
+
+                reader.onload = (e) => {
+                    img.src = e.target.result;
+                };
+
+                reader.onerror = (e) => {
+                    reject(new Error('Failed to read image file.'));
+                };
+                
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height *= maxWidth / width;
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width *= maxHeight / height;
+                            height = maxHeight;
+                        }
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    resolve(canvas.toDataURL('image/jpeg', 0.8));
+                };
+                img.onerror = () => {
+                    reject(new Error('Failed to load image for resizing.'));
+                };
+
+                // Read the file as a data URL
+                reader.readAsDataURL(file);
+            });
+        },
+        removeImage(type, index) {
+          if (type === 'delivery') {
+            this.deliveryPhotos.splice(index, 1);
+            this.deliveryPhotoPreviews.splice(index, 1);
+          }
+        },
+        setupSignaturePad(canvasId) {
+          const canvas = document.getElementById(canvasId);
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          let drawing = false;
+
+          const getPos = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else if (e.clientX) {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            } else {
+                return;
+            }
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top,
+            };
+          };
+
+          const startDrawing = (pos) => {
+            if (!pos) return;
+            drawing = true;
+            this.signatureDrawn = true;
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+          };
+
+          const draw = (pos) => {
+            if (!drawing || !pos) return;
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+          };
+
+          const stopDrawing = () => {
+            drawing = false;
+            ctx.closePath();
+          };
+
+          canvas.addEventListener('mousedown', (e) => startDrawing(getPos(e)));
+          canvas.addEventListener('mousemove', (e) => draw(getPos(e)));
+          canvas.addEventListener('mouseup', stopDrawing);
+          canvas.addEventListener('mouseout', stopDrawing);
+          
+          canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            startDrawing(getPos(e));
+          }, { passive: false });
+          canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            draw(getPos(e));
+          }, { passive: false });
+          canvas.addEventListener('touchend', stopDrawing);
+
+          ctx.lineWidth = 4;
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = '#000';
+        },
+        showSignaturePadDialog() {
+          this.signatureDialog = true;
+          this.$nextTick(() => {
+            const canvas = document.getElementById('fullscreenSignatureCanvas');
+            canvas.width = window.innerWidth * 0.95;
+            canvas.height = window.innerHeight * 0.8;
+            this.setupSignaturePad('fullscreenSignatureCanvas');
+          });
+        },
+        clearSignature() {
+          this.signatureDrawn = false;
+          this.signatureDataUrl = null;
+        },
+        clearSignaturePad() {
+          const canvas = document.getElementById('fullscreenSignatureCanvas');
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+          }
+          this.signatureDrawn = false;
+        },
+        saveFullscreenSignature() {
+          const canvas = document.getElementById('fullscreenSignatureCanvas');
+          this.signatureDataUrl = canvas.toDataURL('image/png');
+          this.signatureDialog = false;
+        },
+        save() {
+          if (!this.billDetails.billNumber) {
+            this.showMessageBox('กรุณากรอกเลขที่บิลที่ถูกต้องก่อน');
+            return;
+          }
+          if (this.deliveryPhotos.length === 0) {
+            this.showMessageBox('กรุณาแนบรูปขนส่งสินค้าอย่างน้อย 1 รูป');
+            return;
+          }
+          if (!this.signatureDrawn && !this.signatureDataUrl) {
+            this.showMessageBox('กรุณาเซ็นชื่อหรือแนบรูปลายเซ็นก่อนบันทึก');
+            return;
+          }
+          
+          this.successDialog = true;
+          console.log('ข้อมูลที่จะส่ง:', {
+            billNumber: this.billNumber,
+            deliveryPhotos: this.deliveryPhotos,
+            signatureDataUrl: this.signatureDataUrl,
+          });
+        },
+        // Function to clear all data and focus on the bill number input field.
+        resetAll() {
+          this.billNumber = '';
+          this.billDetails = {};
+          this.deliveryPhotos = [];
+          this.deliveryPhotoPreviews = [];
+          this.clearSignature();
+          // Focus on the bill number input field.
+          this.$nextTick(() => {
+            this.$refs.billNumberInput.focus();
+          });
+        },
+        handleSuccess() {
+            this.successDialog = false;
+            this.resetAll();
+        },
+        cancel() {
+          this.showMessageBox('ยกเลิกการทำงาน');
+          this.resetAll();
+        },
+        showMessageBox(message) {
+            this.messageBox.message = message;
+            this.messageBox.show = true;
+        }
+      },
+      watch: {
+          billNumber(newVal) {
+              if (newVal === 'DO0011025456') {
+                  this.billDetails = {
+                      billNumber: 'DO0011025456',
+                      sender: 'บริษัท ABC จำกัด',
+                      receiver: 'บริษัท XYZ จำกัด',
+                      date: '20/9/2568',
+                      status: '10 - สร้างบิล'
+                  };
+              } else {
+                  this.billDetails = {};
+              }
+          },
+          signatureDataUrl(newVal) {
+              if (newVal) {
+                  this.signatureDrawn = true;
+              } else {
+                  this.signatureDrawn = false;
+              }
+          }
+      },
+    });
+  </script>
+</body>
+</html>
